@@ -26,8 +26,26 @@ func init() {
 	})
 }
 
-// func main is the first function to be exectued after init()
+// main is the first function to be exectued after init()
 func main() {
 	fmt.Println("Welcome")
 	log.Println("Welcome")
+
+	// load configuration
+	// cfg, err := config.Load()
+	// if err != nil {
+	// 	log.Fatalln(err)
+	// }
+
+	// store := store.NewWeatherStore(cfg.BaseAPIUrl, cfg.APIKey)
+
+	// ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	// defer cancel()
+
+	// responseData, err := store.GetForecastWeatherReport(ctxWithTimeout, "dhanbad", "2")
+	// if err != nil {
+	// 	log.Println(err)
+	// }
+	// jsonData, _ := json.MarshalIndent(responseData, "", "  ")
+	// fmt.Println(string(jsonData))
 }
