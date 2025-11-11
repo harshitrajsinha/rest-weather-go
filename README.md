@@ -1,1 +1,1 @@
-`Rest Weather Go` is native implementation of WeatherAPI to practice REST API fundamentals and other best practices for production-grade Go REST application
+`Rest Weather Go` is native API implementation of WeatherAPI to practice REST API fundamentals and other best practices for production-grade Go REST application
