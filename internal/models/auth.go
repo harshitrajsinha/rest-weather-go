@@ -94,6 +94,9 @@ func VerifyJWTAuthToken(token string, secretAuthKey string) error {
 	})
 
 	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return errors.New("token expired")
+		}
 		return err
 	}
 

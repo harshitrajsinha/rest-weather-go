@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -16,6 +17,7 @@ import (
 	"github.com/harshitrajsinha/rest-weather-go/internal/config"
 	"github.com/harshitrajsinha/rest-weather-go/internal/database"
 	"github.com/harshitrajsinha/rest-weather-go/internal/handler"
+	"github.com/harshitrajsinha/rest-weather-go/internal/middleware"
 )
 
 var dbClient *database.DBClient
@@ -65,7 +67,7 @@ func main() {
 
 	// setup routes
 
-	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+	mux.Handle("GET /health", middleware.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := dbClient.HealthCheck(); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -73,15 +75,17 @@ func main() {
 		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`message:"Application is functioning"`))
-	})
+	}), cfg.SecretAuthKey))
 
-	mux.HandleFunc("/login", loginHandler.HandleGoogleLogin)
-	mux.HandleFunc("/auth/google/callback", loginHandler.HandleGoogleCallback)
+	mux.HandleFunc("GET /login", loginHandler.HandleGoogleLogin)
+	mux.HandleFunc("GET /auth/google/callback", loginHandler.HandleGoogleCallback)
+
+	muxWithLog := middleware.LogMiddleware(mux)
 
 	// set server settings
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      mux,
+		Handler:      muxWithLog,
 		ReadTimeout:  8 * time.Second,
 		WriteTimeout: 8 * time.Second,
 		IdleTimeout:  8 * time.Second,
@@ -98,9 +102,10 @@ func main() {
 
 	// gracefull server shutdown
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	<-stop
+	log.Println("attempt for gracefull shutdown")
 
 	ctxWithContext, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -108,4 +113,6 @@ func main() {
 	if err := server.Shutdown(ctxWithContext); err != nil {
 		log.Fatalf("error shutting down server gracefully, %v", err)
 	}
+	fmt.Println("server closed")
+	log.Println("server closed")
 }
