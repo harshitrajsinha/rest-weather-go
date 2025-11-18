@@ -4,6 +4,7 @@ package models
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,7 +44,7 @@ func CreateJWTAuthToken(googleUserID string, email string, secretAuthKey string,
 	}
 
 	atoken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessTokenclaims)
-	accessToken, err := atoken.SignedString(([]byte(secretAuthKey)))
+	accessToken, err := atoken.SignedString([]byte(secretAuthKey))
 	if err != nil {
 		return authToken, fmt.Errorf("error generating access token, %w", err)
 	}
@@ -78,6 +79,29 @@ func CreateJWTAuthToken(googleUserID string, email string, secretAuthKey string,
 
 	return authToken, nil
 
+}
+
+// VerifyJWTAuthToken parse and verify the token from API request
+func VerifyJWTAuthToken(token string, secretAuthKey string) error {
+
+	var parsedClaims CustomClaims
+	parsedToken, err := jwt.ParseWithClaims(token, &parsedClaims, func(token *jwt.Token) (interface{}, error) {
+		_, ok := token.Method.(*jwt.SigningMethodHMAC)
+		if !ok {
+			return nil, fmt.Errorf("unexpected signing method, %v", token.Header["alg"])
+		}
+		return []byte(secretAuthKey), nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if !parsedToken.Valid {
+		return errors.New("invalid token")
+	}
+
+	return nil
 }
 
 func hashRefreshToken(token string) string {

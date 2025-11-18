@@ -73,26 +73,6 @@ func NewLoginHandler(dbClient *database.DBClient, googleClientID string, googleC
 	}
 }
 
-// ///////////// for browser client
-// func handleLogin(w http.ResponseWriter, _ *http.Request) {
-// 	html := `
-// 	<html>
-// 	<head>
-// 		<title>Google OAuth</title>
-// 	</head>
-// 	<body>
-// 		<div style="display: flex;flex-direction: column;align-items: center;">
-// 			<h1>Welcome to the REST Weather Go</h1>
-// 			<a href="/auth/google/login" style="background-color: #008cff;color: white;padding: 10px;border-radius: 10px;text-decoration: none;">Sign in with Google</a>
-// 		</div>
-// 	</body>
-// 	</html>
-// 	`
-// 	w.Header().Set("Content-Type", "text/html")
-// 	w.WriteHeader(http.StatusOK)
-// 	w.Write([]byte(html))
-// }
-
 // HandleGoogleLogin implements the business logic for Google Oauth
 func (l LoginClient) HandleGoogleLogin(w http.ResponseWriter, _ *http.Request) {
 
@@ -126,14 +106,6 @@ func (l LoginClient) HandleGoogleCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	///////////////////////////////////// for browser client
-	// http.SetCookie(w, &http.Cookie{
-	// 	Name:    "oauthstate",
-	// 	Value:   "",
-	// 	Expires: time.Now().Add(-time.Hour), // Expire immediately
-	// 	Path:    "/",
-	// })
-
 	code := r.FormValue("code")
 	if code == "" {
 		http.Error(w, "Code not received from Google", http.StatusBadRequest)
@@ -159,7 +131,6 @@ func (l LoginClient) HandleGoogleCallback(w http.ResponseWriter, r *http.Request
 	// validate if signing in user is registered in database
 	userData, err := getUserDetails(userInfo.ID, userInfo.Email, l.dbClient)
 	if userData.userid == "" || err != nil {
-		// displayError(w)   /////////// for browser client
 		log.Println(err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -184,7 +155,6 @@ func (l LoginClient) HandleGoogleCallback(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	// displaySuccess(w, authTokenSet)  /////////// for browser client
 	json.NewEncoder(w).Encode(map[string]string{
 		"access-token":  authTokenSet.AccessToken,
 		"refresh-token": authTokenSet.RefreshToken,
@@ -216,17 +186,6 @@ func generateRandomState() (string, error) {
 		return "", err
 	}
 	state := base64.URLEncoding.EncodeToString(b)
-
-	////////////////////////////////////////for browser client
-	// http.SetCookie(w, &http.Cookie{
-	// 	Name:     "oauthstate",
-	// 	Value:    state,
-	// 	Expires:  time.Now().Add(10 * time.Minute),
-	// 	HttpOnly: true,
-	// 	Secure:   false, // true in production
-	// 	Path:     "/",
-	// 	SameSite: http.SameSiteLaxMode,
-	// })
 
 	return state, nil
 }
@@ -264,49 +223,3 @@ func fetchUserInfo(accessToken string) (UserInfo, error) {
 
 	return userInfo, nil
 }
-
-// ///////////// for browser client
-// func displaySuccess(w http.ResponseWriter, authTokenSet models.AuthToken) {
-// 	html := fmt.Sprintf(`
-// 		<html>
-// 		<head>
-// 			<title>Login Successful</title>
-// 		</head>
-// 		<body style="background-color:#444444;">
-// 			<div style="display: flex;flex-direction: column;align-items: center;">
-// 				<h2 style="color:#007acc;">Login Successful!!</h2>
-// 				<p style="color:#28a745;">You have successfully authenticated. You can now close this tab and make the authorized API requests</p>
-// 				<div style="padding:4rem">
-// 					<p style="word-break: break-all;white-space: normal;font-family: monospace; ">Access Token: %s</p>
-// 					<p style="word-break: break-all;white-space: normal;font-family: monospace; ">Refresh Token: %s</p>
-// 				</div>
-// 			</div>
-// 		</body>
-// 		<script>
-// 		</script>
-// 		</html>
-// 	`, authTokenSet.AccessToken, authTokenSet.RefreshToken)
-// 	w.Header().Set("Content-Type", "text/html")
-// 	w.WriteHeader(http.StatusOK)
-// 	w.Write([]byte(html))
-// }
-
-// ///////////// for browser client
-// func displayError(w http.ResponseWriter) {
-// 	html := fmt.Sprintln(`
-// 		<html>
-// 		<head>
-// 			<title>Login Failed</title>
-// 		</head>
-// 		<body style="background-color:#d4d4d4;">
-// 			<div style="display: flex;flex-direction: column;align-items: center;">
-// 				<h2 style="color:#007acc;">Login Failed!!</h2>
-// 				<p style="color:#ff0023;">You are not allowed to make API requests</p>
-// 			</div>
-// 		</body>
-// 		</html>
-// 	`)
-// 	w.Header().Set("Content-Type", "text/html")
-// 	w.WriteHeader(http.StatusOK)
-// 	w.Write([]byte(html))
-// }
