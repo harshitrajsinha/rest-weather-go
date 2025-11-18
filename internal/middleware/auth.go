@@ -9,6 +9,7 @@ import (
 	"github.com/harshitrajsinha/rest-weather-go/internal/models"
 )
 
+// AuthMiddleware adds authentication middlware to verify protected requests
 func AuthMiddleware(next http.Handler, secretAuthKey string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
