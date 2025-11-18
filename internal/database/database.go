@@ -86,7 +86,7 @@ func (dbC *DBClient) QueryContext(ctx context.Context, query string, args ...any
 	return dbC.db.QueryContext(ctx, query, args...)
 }
 
-// Exec executes a non-query SQL statement with context.
+// ExecContext executes a non-query SQL statement with context.
 func (dbC *DBClient) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return dbC.db.ExecContext(ctx, query, args...)
 }
