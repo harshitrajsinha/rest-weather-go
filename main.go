@@ -78,6 +78,7 @@ func main() {
 	}), cfg.SecretAuthKey))
 
 	mux.HandleFunc("GET /login", loginHandler.HandleGoogleLogin)
+	// mux.HandleFunc("GET /logout", loginHandler.HandleGoogleLogin)
 	mux.HandleFunc("GET /auth/google/callback", loginHandler.HandleGoogleCallback)
 
 	muxWithLog := middleware.LogMiddleware(mux)
