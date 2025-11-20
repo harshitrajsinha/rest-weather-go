@@ -12,9 +12,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/harshitrajsinha/rest-weather-go/internal/database"
+	"github.com/harshitrajsinha/rest-weather-go/internal/middleware"
 	"github.com/harshitrajsinha/rest-weather-go/internal/models"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -43,18 +45,20 @@ type user struct {
 	createdAt string
 }
 
-// LoginClient encapsulates all dependencies and configuration required
-// for handling Google OAuth login and callback flows.
-type LoginClient struct {
-	dbClient           *database.DBClient
-	googleClientID     string
-	googleClientSecret string
-	secretAuthKey      string
-	googleOauthConfig  *oauth2.Config
+// UserHandler encapsulates all dependencies and configuration required
+// for handling user login and logout
+type UserHandler struct {
+	dbClient          *database.DBClient
+	secretAuthKey     string
+	googleOauthConfig *oauth2.Config
 }
 
-// NewLoginHandler is the constructor used for depenedency injection to login handler
-func NewLoginHandler(dbClient *database.DBClient, googleClientID string, googleClientSecret string, secretAuthKey string) *LoginClient {
+type RefreshTokenPayload struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// NewUserHandler is the constructor used for depenedency injection to login handler
+func NewUserHandler(dbClient *database.DBClient, googleClientID string, googleClientSecret string, secretAuthKey string) *UserHandler {
 
 	googleOauthConfig := &oauth2.Config{
 		RedirectURL:  redirectURL,
@@ -64,17 +68,15 @@ func NewLoginHandler(dbClient *database.DBClient, googleClientID string, googleC
 		Endpoint:     google.Endpoint,
 	}
 
-	return &LoginClient{
-		dbClient:           dbClient,
-		googleClientID:     googleClientID,
-		googleClientSecret: googleClientSecret,
-		secretAuthKey:      secretAuthKey,
-		googleOauthConfig:  googleOauthConfig,
+	return &UserHandler{
+		dbClient:          dbClient,
+		secretAuthKey:     secretAuthKey,
+		googleOauthConfig: googleOauthConfig,
 	}
 }
 
 // HandleGoogleLogin implements the business logic for Google Oauth
-func (l LoginClient) HandleGoogleLogin(w http.ResponseWriter, _ *http.Request) {
+func (l UserHandler) HandleGoogleLogin(w http.ResponseWriter, _ *http.Request) {
 
 	// Generate a random 'state' value to prevent CSRF attacks.
 	var err error
@@ -96,7 +98,7 @@ func (l LoginClient) HandleGoogleLogin(w http.ResponseWriter, _ *http.Request) {
 }
 
 // HandleGoogleCallback is called by Google Oauth to exchange code and user info
-func (l LoginClient) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
+func (l UserHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 
 	receivedState := r.FormValue("state")
 	// stateCookie, err := r.Cookie("oauthstate")  // for browser client
@@ -159,6 +161,111 @@ func (l LoginClient) HandleGoogleCallback(w http.ResponseWriter, r *http.Request
 		"access-token":  authTokenSet.AccessToken,
 		"refresh-token": authTokenSet.RefreshToken,
 	})
+}
+
+// HandleUserLogout invokes refresh token from database
+func (l UserHandler) HandleUserLogout(w http.ResponseWriter, r *http.Request) {
+
+	userGoogleID := r.Context().Value(middleware.UserGoogleID).(string)
+	userEmailID := r.Context().Value(middleware.UserEmailID).(string)
+
+	// revoke refresh token
+	err := l.dbClient.RevokeRefreshToken(userGoogleID, userEmailID)
+	if err != nil {
+		log.Println("could not revoke refresh token to logout user", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"message": "could not log out"}`))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"message": "successfully logged out"}`))
+
+}
+
+// HandleRotateTokens rotates access and refresh token
+func (l UserHandler) HandleRotateTokens(w http.ResponseWriter, r *http.Request) {
+
+	// validate refresh token
+	// if expire -> ask to re-login
+	// else retrieve user data and generate new auth tokens
+
+	var payload RefreshTokenPayload
+
+	// get refresh token from payload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		log.Println("error decoding payload to get refresh token", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"message": "could not process now"}`))
+		return
+	}
+
+	isValidJWTStr := models.ValidateJWTString(payload.RefreshToken)
+	if !isValidJWTStr {
+		log.Println("not a valid JWT string")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"message": "Not a valid JWT string"}`))
+		return
+	}
+
+	// verify refresh token
+	userData, err := models.VerifyJWTAuthToken(payload.RefreshToken, l.secretAuthKey, l.dbClient)
+	if err != nil {
+		if strings.Contains(err.Error(), "token expired") {
+			log.Println("refresh token has expired")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte("You need to re-login"))
+			return
+		}
+
+		log.Println("error while verifying refresh token, ", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("You need to re-login"))
+		return
+	}
+
+	// check if user has entered its own refresh token
+	hashedRefreshToken := models.HashRefreshToken(payload.RefreshToken)
+
+	// compare with refresh token stored in database
+	var storedHashedToken string
+	ctxWithTimeout, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	query := "SELECT refresh_token from users where google_id=$1 AND email=$2"
+	if err := l.dbClient.QueryRowContext(ctxWithTimeout, query, userData.GoogleUserID, userData.Email).Scan(&storedHashedToken); err != nil {
+		log.Println("error while verifying refresh token, ", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("You need to re-login"))
+		return
+	}
+
+	if hashedRefreshToken != storedHashedToken {
+		log.Println("hashed refresh token and stored hashed token do not match")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("You need to re-login"))
+		return
+	}
+
+	// generate new tokens
+	authTokenSet, err := models.CreateJWTAuthToken(userData.GoogleUserID, userData.Email, l.secretAuthKey, l.dbClient)
+	if err != nil {
+		log.Println(err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "something went wrong",
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"access-token":  authTokenSet.AccessToken,
+		"refresh-token": authTokenSet.RefreshToken,
+	})
+
 }
 
 func getUserDetails(googleUserID string, email string, dbClient *database.DBClient) (user, error) {

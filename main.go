@@ -60,14 +60,14 @@ func main() {
 
 	defer dbClient.Close()
 
-	loginHandler := handler.NewLoginHandler(dbClient, cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.SecretAuthKey)
+	userHandler := handler.NewUserHandler(dbClient, cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.SecretAuthKey)
 
 	// local mux server
 	mux := http.NewServeMux()
 
 	// setup routes
 
-	mux.Handle("GET /health", middleware.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /health", middleware.AuthMiddleware(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := dbClient.HealthCheck(); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -75,11 +75,12 @@ func main() {
 		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`message:"Application is functioning"`))
-	}), cfg.SecretAuthKey))
+	}, cfg.SecretAuthKey, dbClient))
 
-	mux.HandleFunc("GET /login", loginHandler.HandleGoogleLogin)
-	// mux.HandleFunc("GET /logout", loginHandler.HandleGoogleLogin)
-	mux.HandleFunc("GET /auth/google/callback", loginHandler.HandleGoogleCallback)
+	mux.HandleFunc("GET /login", userHandler.HandleGoogleLogin)
+	mux.HandleFunc("GET /auth/google/callback", userHandler.HandleGoogleCallback)
+	mux.HandleFunc("POST /refresh", userHandler.HandleRotateTokens)
+	mux.HandleFunc("GET /logout", middleware.AuthMiddleware(userHandler.HandleUserLogout, cfg.SecretAuthKey, dbClient))
 
 	muxWithLog := middleware.LogMiddleware(mux)
 
