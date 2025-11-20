@@ -53,6 +53,7 @@ type UserHandler struct {
 	googleOauthConfig *oauth2.Config
 }
 
+// RefreshTokenPayload defines strucuture of payload that will be parsed on route call to /refresh
 type RefreshTokenPayload struct {
 	RefreshToken string `json:"refresh_token"`
 }
