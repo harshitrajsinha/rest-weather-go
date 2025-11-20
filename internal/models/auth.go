@@ -2,6 +2,7 @@
 package models
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -23,6 +24,12 @@ type CustomClaims struct {
 	GoogleUserID string `json:"google_user_id"`
 	Email        string `json:"email"`
 	jwt.RegisteredClaims
+}
+
+// UserData defines structure of payload that will be returned for authenticated user
+type UserData struct {
+	GoogleUserID string
+	Email        string
 }
 
 // CreateJWTAuthToken creates short-lived access token and long-lived refresh token
@@ -68,7 +75,7 @@ func CreateJWTAuthToken(googleUserID string, email string, secretAuthKey string,
 	}
 
 	// store refresh token in database (hashing for security)
-	hashedRefreshToken := hashRefreshToken(refreshToken)
+	hashedRefreshToken := HashRefreshToken(refreshToken)
 	err = dbClient.StoreRefreshToken(hashedRefreshToken, googleUserID, email)
 	if err != nil {
 		return authToken, err
@@ -82,7 +89,7 @@ func CreateJWTAuthToken(googleUserID string, email string, secretAuthKey string,
 }
 
 // VerifyJWTAuthToken parse and verify the token from API request
-func VerifyJWTAuthToken(token string, secretAuthKey string) error {
+func VerifyJWTAuthToken(token string, secretAuthKey string, dbClient *database.DBClient) (UserData, error) {
 
 	var parsedClaims CustomClaims
 	parsedToken, err := jwt.ParseWithClaims(token, &parsedClaims, func(token *jwt.Token) (interface{}, error) {
@@ -95,19 +102,32 @@ func VerifyJWTAuthToken(token string, secretAuthKey string) error {
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return errors.New("token expired")
+			return UserData{}, errors.New("token expired")
 		}
-		return err
+		return UserData{}, err
 	}
 
 	if !parsedToken.Valid {
-		return errors.New("invalid token")
+		return UserData{}, errors.New("invalid token")
 	}
 
-	return nil
+	// check if user has not logged out
+	var hasUserLoggedOut string
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	err = dbClient.QueryRowContext(ctxWithTimeout, "SELECT refresh_token from users WHERE google_id=$1 AND email=$2", parsedClaims.GoogleUserID, parsedClaims.Email).Scan(&hasUserLoggedOut)
+	if err != nil {
+		return UserData{}, err
+	}
+	if hasUserLoggedOut == "" {
+		return UserData{}, errors.New("invalid token")
+	}
+
+	return UserData{GoogleUserID: parsedClaims.GoogleUserID, Email: parsedClaims.Email}, nil
 }
 
-func hashRefreshToken(token string) string {
+// HashRefreshToken creates produces a 64-character hex-encoded SHA-256 hash.
+func HashRefreshToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(hash[:])
 }
