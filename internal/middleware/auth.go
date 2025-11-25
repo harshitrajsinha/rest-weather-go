@@ -7,19 +7,21 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/harshitrajsinha/rest-weather-go/internal/auth"
 	"github.com/harshitrajsinha/rest-weather-go/internal/database"
-	"github.com/harshitrajsinha/rest-weather-go/internal/models"
+	"github.com/harshitrajsinha/rest-weather-go/internal/response"
 )
 
 type userContextKey string
 
-// UserGoogleID is context key for GoogleID value
-var UserGoogleID userContextKey = "usergoogleid"
+const (
+	// UserGoogleID is a context key variable
+	UserGoogleID userContextKey = "usergoogleid"
+	// UserEmailID is a context key variable
+	UserEmailID userContextKey = "useremailid"
+)
 
-// UserEmailID is context key for EmailID value
-var UserEmailID userContextKey = "useremailid"
-
-// AuthMiddleware adds authentication middlware to verify protected requests
+// AuthMiddleware adds authentication middleware to verify protected requests
 func AuthMiddleware(next http.HandlerFunc, secretAuthKey string, dbClient *database.DBClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -27,41 +29,61 @@ func AuthMiddleware(next http.HandlerFunc, secretAuthKey string, dbClient *datab
 		authToken := strings.TrimSpace(r.Header.Get("Authorization"))
 		if authToken == "" {
 			log.Println("missing authorization header in request")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("missing authorization token"))
+			errorDetails := map[string]string{
+				"expected": "Bearer {jwt_token}",
+				"received": "none",
+			}
+			response.SendErrorResponseToClient(w, response.StatusUnauthorizedCode, errorDetails)
 			return
 		}
 
 		authToken = strings.TrimPrefix(authToken, "Bearer ")
 		if authToken == "" {
 			log.Println("invalid bearer token for authorization")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("invalid bearer token for authorization"))
+			errorDetails := map[string]string{
+				"expected": "Bearer {JWT_token}",
+				"received": "Bearer",
+			}
+			if err := response.SendErrorResponseToClient(w, response.StatusAuthTokenInvalidCode, errorDetails); err != nil {
+				log.Println(err)
+			}
 			return
 		}
 
 		// validate JWT string
-		isValidJWTStr := models.ValidateJWTString(authToken)
+		isValidJWTStr := auth.ValidateJWTString(authToken)
 		if !isValidJWTStr {
 			log.Println("not a valid JWT string")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("authorization token is invalid"))
+			errorDetails := map[string]string{
+				"expected": "Bearer {JWT_token}",
+				"received": "Invalid JWT string",
+			}
+			if err := response.SendErrorResponseToClient(w, response.StatusAuthTokenInvalidCode, errorDetails); err != nil {
+				log.Println(err)
+			}
 			return
 		}
 
 		// verify token
-		userData, err := models.VerifyJWTAuthToken(authToken, secretAuthKey, dbClient)
+		userData, err := auth.VerifyJWTAuthToken(authToken, secretAuthKey, dbClient)
 		if err != nil {
 			if strings.Contains(err.Error(), "token expired") {
 				log.Println("authorization token has expired")
-				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte("authorization token has expired"))
+				errorDetails := map[string]string{
+					"expected": "Valid Bearer token",
+					"received": "expired",
+				}
+				if err := response.SendErrorResponseToClient(w, response.StatusAuthTokenInvalidCode, errorDetails); err != nil {
+					log.Println(err)
+				}
 				return
 			}
 
 			log.Println("error while verifying auth token, ", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("something went wrong"))
+			errorDetails := map[string]string{}
+			if err := response.SendErrorResponseToClient(w, response.StatusInternalServerErrorCode, errorDetails); err != nil {
+				log.Println(err)
+			}
 			return
 		}
 

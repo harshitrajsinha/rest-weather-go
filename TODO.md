@@ -1,0 +1,1 @@
+1. Push old log files to S3 before deletion.

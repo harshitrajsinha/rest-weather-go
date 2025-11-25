@@ -18,6 +18,7 @@ import (
 	"github.com/harshitrajsinha/rest-weather-go/internal/database"
 	"github.com/harshitrajsinha/rest-weather-go/internal/handler"
 	"github.com/harshitrajsinha/rest-weather-go/internal/middleware"
+	"github.com/harshitrajsinha/rest-weather-go/internal/response"
 )
 
 var dbClient *database.DBClient
@@ -35,6 +36,8 @@ func init() {
 
 	// set log flags for UTC timezone and file identification
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Lshortfile)
+
+	// TODO: Push log files to S3 bucket before deletion
 
 	// set log rotation and output path
 	log.SetOutput(&lumberjack.Logger{
@@ -62,19 +65,23 @@ func main() {
 
 	userHandler := handler.NewUserHandler(dbClient, cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.SecretAuthKey)
 
-	// local mux server
+	// API router to map requests to respective route handlers
 	mux := http.NewServeMux()
 
 	// setup routes
-
 	mux.HandleFunc("GET /health", middleware.AuthMiddleware(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := dbClient.HealthCheck(); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`message:"Application is not functioning"`))
+			log.Println("error while doing application health check", err)
+			errorDetails := map[string]string{}
+			if err := response.SendErrorResponseToClient(w, response.StatusInternalServerErrorCode, errorDetails); err != nil {
+				log.Println(err)
+			}
+			return
 		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`message:"Application is functioning"`))
+		if err := response.SendResponseToClient(w, http.StatusOK, "Application is functioning", nil); err != nil {
+			log.Println(err)
+		}
 	}, cfg.SecretAuthKey, dbClient))
 
 	mux.HandleFunc("GET /login", userHandler.HandleGoogleLogin)

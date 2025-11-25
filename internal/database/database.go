@@ -126,8 +126,8 @@ func (dbC *DBClient) StoreRefreshToken(refreshToken string, googleUserID string,
 		return fmt.Errorf("error storing refresh token in database, %w", err)
 	}
 
-	rowAffected, _ := result.RowsAffected()
-	if rowAffected == 0 {
+	rowAffected, err := result.RowsAffected()
+	if err != nil || rowAffected == 0 {
 		return errors.New("no row updated")
 	}
 
@@ -141,8 +141,8 @@ func (dbC *DBClient) RevokeRefreshToken(googleUserID string, email string) error
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	query := "UPDATE users SET refresh_token=$1 WHERE google_id=$2 AND email=$3"
-	result, err := dbC.db.ExecContext(ctxWithTimeout, query, "", googleUserID, email)
+	query := "UPDATE users SET refresh_token='' WHERE google_id=$1 AND email=$2"
+	result, err := dbC.db.ExecContext(ctxWithTimeout, query, googleUserID, email)
 	if err != nil {
 		return fmt.Errorf("error revoking refresh token in database, %w", err)
 	}

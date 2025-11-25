@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/harshitrajsinha/rest-weather-go/internal/auth"
 	"github.com/harshitrajsinha/rest-weather-go/internal/database"
 	"github.com/harshitrajsinha/rest-weather-go/internal/middleware"
-	"github.com/harshitrajsinha/rest-weather-go/internal/models"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -144,7 +144,7 @@ func (l UserHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	// generate jwt auth token for authorization
-	authTokenSet, err := models.CreateJWTAuthToken(userInfo.ID, userInfo.Email, l.secretAuthKey, l.dbClient)
+	authTokenSet, err := auth.CreateJWTAuthToken(userInfo.ID, userInfo.Email, l.secretAuthKey, l.dbClient)
 	if err != nil {
 		log.Println(err)
 		w.Header().Set("Content-Type", "application/json")
@@ -201,7 +201,7 @@ func (l UserHandler) HandleRotateTokens(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	isValidJWTStr := models.ValidateJWTString(payload.RefreshToken)
+	isValidJWTStr := auth.ValidateJWTString(payload.RefreshToken)
 	if !isValidJWTStr {
 		log.Println("not a valid JWT string")
 		w.WriteHeader(http.StatusBadRequest)
@@ -210,7 +210,7 @@ func (l UserHandler) HandleRotateTokens(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// verify refresh token
-	userData, err := models.VerifyJWTAuthToken(payload.RefreshToken, l.secretAuthKey, l.dbClient)
+	userData, err := auth.VerifyJWTAuthToken(payload.RefreshToken, l.secretAuthKey, l.dbClient)
 	if err != nil {
 		if strings.Contains(err.Error(), "token expired") {
 			log.Println("refresh token has expired")
@@ -226,7 +226,7 @@ func (l UserHandler) HandleRotateTokens(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// check if user has entered its own refresh token
-	hashedRefreshToken := models.HashRefreshToken(payload.RefreshToken)
+	hashedRefreshToken := auth.HashRefreshToken(payload.RefreshToken)
 
 	// compare with refresh token stored in database
 	var storedHashedToken string
@@ -248,7 +248,7 @@ func (l UserHandler) HandleRotateTokens(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// generate new tokens
-	authTokenSet, err := models.CreateJWTAuthToken(userData.GoogleUserID, userData.Email, l.secretAuthKey, l.dbClient)
+	authTokenSet, err := auth.CreateJWTAuthToken(userData.GoogleUserID, userData.Email, l.secretAuthKey, l.dbClient)
 	if err != nil {
 		log.Println(err)
 		w.Header().Set("Content-Type", "application/json")
